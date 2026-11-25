@@ -1,0 +1,353 @@
+-- ==========================================
+-- 1. BYPASS E PROTEÇÕES
+-- ==========================================
+pcall(function() game.Players.LocalPlayer.Kick = function() end end)
+
+local Players = game:GetService("Players")
+local Player = Players.LocalPlayer
+local RunService = game:GetService("RunService")
+local Camera = workspace.CurrentCamera
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+
+-- ==========================================
+-- 2. TEMA VERMELHO (RED THEME)
+-- ==========================================
+local COLOR_BG     = Color3.fromRGB(15, 0, 0)
+local COLOR_PANEL  = Color3.fromRGB(25, 5, 5)
+local COLOR_TAB    = Color3.fromRGB(40, 10, 10)
+local COLOR_ACCENT = Color3.fromRGB(220, 20, 20) -- Vermelho Crimson
+local COLOR_TEXT   = Color3.fromRGB(255, 255, 255)
+local COLOR_SUB    = Color3.fromRGB(180, 150, 150)
+
+-- ==========================================
+-- 3. VARIÁVEIS DO ESP E TELEPORT
+-- ==========================================
+local espEnabled = false
+local espSkeletonEnabled = true
+local espBoxEnabled = true
+local espTracerEnabled = true
+local ESPS = {}
+
+local function newDrawing(kind)
+    if not Drawing then return nil end
+    local ok, obj = pcall(function() return Drawing.new(kind) end)
+    if ok then return obj end
+    return nil
+end
+
+-- ==========================================
+-- 4. FUNÇÕES DO ESP (DESENHO)
+-- ==========================================
+local function CreateESP(plr)
+    if ESPS[plr] then return end
+    
+    local tbl = {
+        box = newDrawing("Square"),
+        name = newDrawing("Text"),
+        healthBar = newDrawing("Line"),
+        healthBg = newDrawing("Line"),
+        tracer = newDrawing("Line"),
+        skeleton = {}
+    }
+    
+    -- Configurações da Caixa
+    if tbl.box then
+        tbl.box.Thickness = 1
+        tbl.box.Filled = false
+        tbl.box.Color = COLOR_ACCENT
+    end
+    
+    -- Configurações do Nome
+    if tbl.name then
+        tbl.name.Size = 14
+        tbl.name.Center = true
+        tbl.name.Outline = true
+        tbl.name.Color = COLOR_TEXT
+    end
+    
+    -- Configurações da Vida (Barra Verde)
+    if tbl.healthBar then
+        tbl.healthBar.Thickness = 2
+        tbl.healthBar.Color = Color3.fromRGB(0, 255, 0)
+    end
+    if tbl.healthBg then
+        tbl.healthBg.Thickness = 2
+        tbl.healthBg.Color = Color3.fromRGB(0, 0, 0)
+    end
+    
+    -- Configurações do Tracer (Linha)
+    if tbl.tracer then
+        tbl.tracer.Thickness = 1
+        tbl.tracer.Color = Color3.fromRGB(255, 0, 0)
+    end
+    
+    -- Criação dos ossos do esqueleto
+    for i = 1, 6 do
+        tbl.skeleton[i] = newDrawing("Line")
+        if tbl.skeleton[i] then
+            tbl.skeleton[i].Thickness = 1
+            tbl.skeleton[i].Color = Color3.fromRGB(255, 165, 0) -- Laranja igual a foto
+        end
+    end
+    
+    ESPS[plr] = tbl
+end
+
+local function RemoveESP(plr)
+    if not ESPS[plr] then return end
+    for _, obj in pairs(ESPS[plr]) do
+        if typeof(obj) == "table" then
+            for _, line in pairs(obj) do if line and line.Remove then line:Remove() end end
+        elseif obj and obj.Remove then
+            obj:Remove()
+        end
+    end
+    ESPS[plr] = nil
+end
+
+local function UpdateESP()
+    local camPos = Camera.CFrame.Position
+    
+    for _, plr in pairs(Players:GetPlayers()) do
+        if plr ~= Player and plr.Character then
+            local char = plr.Character
+            local head = char:FindFirstChild("Head")
+            local hrp = char:FindFirstChild("HumanoidRootPart")
+            local humanoid = char:FindFirstChild("Humanoid")
+            
+            if head and hrp and humanoid and humanoid.Health > 0 and espEnabled then
+                local headPos, onScreen = Camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                local hrpPos = Camera:WorldToViewportPoint(hrp.Position)
+                
+                if onScreen then
+                    if not ESPS[plr] then CreateESP(plr) end
+                    local tbl = ESPS[plr]
+                    
+                    -- Distância
+                    local dist = (camPos - hrp.Position).Magnitude
+                    local boxHeight = math.clamp(2500 / dist, 40, 300)
+                    local boxWidth = boxHeight / 2
+                    
+                    -- Atualizar Caixa
+                    if tbl.box then
+                        tbl.box.Visible = espBoxEnabled
+                        tbl.box.Size = Vector2.new(boxWidth, boxHeight)
+                        tbl.box.Position = Vector2.new(headPos.X - boxWidth/2, headPos.Y - boxHeight/4)
+                    end
+                    
+                    -- Atualizar Nome e Distância
+                    if tbl.name then
+                        tbl.name.Visible = true
+                        tbl.name.Text = plr.Name .. " [" .. math.floor(dist) .. "m]"
+                        tbl.name.Position = Vector2.new(headPos.X, headPos.Y - boxHeight/4 - 15)
+                    end
+                    
+                    -- Atualizar Barra de Vida
+                    if tbl.healthBar and tbl.healthBg then
+                        local hpPct = humanoid.Health / humanoid.MaxHealth
+                        local barPos = Vector2.new(tbl.box.Position.X - 5, tbl.box.Position.Y)
+                        local barSize = boxHeight
+                        
+                        tbl.healthBg.Visible = true
+                        tbl.healthBg.From = barPos
+                        tbl.healthBg.To = barPos + Vector2.new(0, barSize)
+                        
+                        tbl.healthBar.Visible = true
+                        tbl.healthBar.From = barPos + Vector2.new(0, barSize * (1 - hpPct))
+                        tbl.healthBar.To = barPos + Vector2.new(0, barSize)
+                    end
+                    
+                    -- Atualizar Tracer (Linha do meio da tela até o jogador)
+                    if tbl.tracer then
+                        tbl.tracer.Visible = espTracerEnabled
+                        tbl.tracer.From = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y)
+                        tbl.tracer.To = Vector2.new(headPos.X, headPos.Y + boxHeight/4)
+                    end
+                    
+                    -- Atualizar Esqueleto
+                    if espSkeletonEnabled then
+                        local parts = {
+                            head = char:FindFirstChild("Head"),
+                            upperTorso = char:FindFirstChild("UpperTorso") or char:FindFirstChild("Torso"),
+                            lowerTorso = char:FindFirstChild("LowerTorso") or char:FindFirstChild("Torso"),
+                            leftArm = char:FindFirstChild("LeftUpperArm") or char:FindFirstChild("Left Arm"),
+                            rightArm = char:FindFirstChild("RightUpperArm") or char:FindFirstChild("Right Arm"),
+                            leftLeg = char:FindFirstChild("LeftUpperLeg") or char:FindFirstChild("Left Leg"),
+                            rightLeg = char:FindFirstChild("RightUpperLeg") or char:FindFirstChild("Right Leg")
+                        }
+                        
+                        local function getPos(part)
+                            if part then
+                                local p, onS = Camera:WorldToViewportPoint(part.Position)
+                                if onS then return Vector2.new(p.X, p.Y) end
+                            end
+                            return nil
+                        end
+                        
+                        local hP = getPos(parts.head)
+                        local utP = getPos(parts.upperTorso)
+                        local ltP = getPos(parts.lowerTorso)
+                        local laP = getPos(parts.leftArm)
+                        local raP = getPos(parts.rightArm)
+                        local llP = getPos(parts.leftLeg)
+                        local rlP = getPos(parts.rightLeg)
+                        
+                        -- Desenha as linhas ligando os pontos
+                        if hP and utP then tbl.skeleton[1].From = hP; tbl.skeleton[1].To = utP; tbl.skeleton[1].Visible = true else tbl.skeleton[1].Visible = false end
+                        if utP and ltP then tbl.skeleton[2].From = utP; tbl.skeleton[2].To = ltP; tbl.skeleton[2].Visible = true else tbl.skeleton[2].Visible = false end
+                        if utP and laP then tbl.skeleton[3].From = utP; tbl.skeleton[3].To = laP; tbl.skeleton[3].Visible = true else tbl.skeleton[3].Visible = false end
+                        if utP and raP then tbl.skeleton[4].From = utP; tbl.skeleton[4].To = raP; tbl.skeleton[4].Visible = true else tbl.skeleton[4].Visible = false end
+                        if ltP and llP then tbl.skeleton[5].From = ltP; tbl.skeleton[5].To = llP; tbl.skeleton[5].Visible = true else tbl.skeleton[5].Visible = false end
+                        if ltP and rlP then tbl.skeleton[6].From = ltP; tbl.skeleton[6].To = rlP; tbl.skeleton[6].Visible = true else tbl.skeleton[6].Visible = false end
+                    else
+                        for i = 1, 6 do if tbl.skeleton[i] then tbl.skeleton[i].Visible = false end end
+                    end
+                else
+                    if ESPS[plr] then
+                        if ESPS[plr].box then ESPS[plr].box.Visible = false end
+                        if ESPS[plr].name then ESPS[plr].name.Visible = false end
+                        if ESPS[plr].healthBar then ESPS[plr].healthBar.Visible = false; ESPS[plr].healthBg.Visible = false end
+                        if ESPS[plr].tracer then ESPS[plr].tracer.Visible = false end
+                        for i = 1, 6 do if ESPS[plr].skeleton[i] then ESPS[plr].skeleton[i].Visible = false end end
+                    end
+                end
+            else
+                if ESPS[plr] then
+                    if ESPS[plr].box then ESPS[plr].box.Visible = false end
+                    if ESPS[plr].name then ESPS[plr].name.Visible = false end
+                    if ESPS[plr].healthBar then ESPS[plr].healthBar.Visible = false; ESPS[plr].healthBg.Visible = false end
+                    if ESPS[plr].tracer then ESPS[plr].tracer.Visible = false end
+                    for i = 1, 6 do if ESPS[plr].skeleton[i] then ESPS[plr].skeleton[i].Visible = false end end
+                end
+            end
+        end
+    end
+end
+
+-- ==========================================
+-- 5. CRIAÇÃO DO MENU VISUAL E TELEPORT
+-- ==========================================
+local MainGui = Instance.new("ScreenGui")
+MainGui.Name = "StoppedMenu_RedTheme"
+MainGui.ResetOnSpawn = false
+MainGui.Parent = Player:WaitForChild("PlayerGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 350, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -175)
+MainFrame.BackgroundColor3 = COLOR_PANEL
+MainFrame.Parent = MainGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 8)
+
+local TitleBar = Instance.new("Frame")
+TitleBar.Size = UDim2.new(1, 0, 0, 35)
+TitleBar.BackgroundColor3 = COLOR_BG
+TitleBar.Parent = MainFrame
+Instance.new("UICorner", TitleBar).CornerRadius = UDim.new(0, 8)
+
+local TitleText = Instance.new("TextLabel")
+TitleText.Size = UDim2.new(1, 0, 1, 0)
+TitleText.BackgroundTransparency = 1
+TitleText.Text = "STOPPED | RED ESP & TP"
+TitleText.TextColor3 = COLOR_ACCENT
+TitleText.Font = Enum.Font.GothamBold
+TitleText.TextSize = 14
+TitleText.Parent = TitleBar
+
+-- Botão ESP
+local ESPBtn = Instance.new("TextButton")
+ESPBtn.Size = UDim2.new(0.9, 0, 0, 40)
+ESPBtn.Position = UDim2.new(0.05, 0, 0, 50)
+ESPBtn.BackgroundColor3 = COLOR_TAB
+ESPBtn.TextColor3 = COLOR_TEXT
+ESPBtn.Font = Enum.Font.Gotham
+ESPBtn.Text = "ESP GERAL: DESLIGADO"
+ESPBtn.Parent = MainFrame
+Instance.new("UICorner", ESPBtn).CornerRadius = UDim.new(0, 6)
+
+-- Toggle Esqueleto
+local SkelBtn = Instance.new("TextButton")
+SkelBtn.Size = UDim2.new(0.9, 0, 0, 30)
+SkelBtn.Position = UDim2.new(0.05, 0, 0, 100)
+SkelBtn.BackgroundColor3 = COLOR_TAB
+SkelBtn.TextColor3 = COLOR_TEXT
+SkelBtn.Font = Enum.Font.Gotham
+SkelBtn.Text = "Esqueleto: LIGADO"
+SkelBtn.Parent = MainFrame
+Instance.new("UICorner", SkelBtn).CornerRadius = UDim.new(0, 6)
+
+-- Dropdown de Teleport
+local TPFrame = Instance.new("Frame")
+TPFrame.Size = UDim2.new(0.9, 0, 0, 80)
+TPFrame.Position = UDim2.new(0.05, 0, 0, 150)
+TPFrame.BackgroundColor3 = COLOR_BG
+TPFrame.Parent = MainFrame
+Instance.new("UICorner", TPFrame).CornerRadius = UDim.new(0, 6)
+
+local TPLabel = Instance.new("TextLabel")
+TPLabel.Size = UDim2.new(1, 0, 0, 25)
+TPLabel.BackgroundTransparency = 1
+TPLabel.Text = "Teleportar para Jogador:"
+TPLabel.TextColor3 = COLOR_TEXT
+TPLabel.Font = Enum.Font.Gotham
+TPLabel.TextSize = 14
+TPLabel.Parent = TPFrame
+
+local TPButton = Instance.new("TextButton")
+TPButton.Size = UDim2.new(1, -10, 0, 35)
+TPButton.Position = UDim2.new(0, 5, 0, 30)
+TPButton.BackgroundColor3 = COLOR_ACCENT
+TPButton.TextColor3 = COLOR_TEXT
+TPButton.Font = Enum.Font.GothamBold
+TPButton.Text = "Selecionar Jogador"
+TPButton.Parent = TPFrame
+Instance.new("UICorner", TPButton).CornerRadius = UDim.new(0, 6)
+
+-- Lógica do Menu
+ESPBtn.MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    ESPBtn.Text = "ESP GERAL: " .. (espEnabled and "LIGADO" or "DESLIGADO")
+    ESPBtn.BackgroundColor3 = espEnabled and COLOR_ACCENT or COLOR_TAB
+    if not espEnabled then
+        for plr, _ in pairs(ESPS) do RemoveESP(plr) end
+    end
+end)
+
+SkelBtn.MouseButton1Click:Connect(function()
+    espSkeletonEnabled = not espSkeletonEnabled
+    SkelBtn.Text = "Esqueleto: " .. (espSkeletonEnabled and "LIGADO" or "DESLIGADO")
+end)
+
+-- Lógica do Dropdown de TP
+local currentTPTarget = nil
+local function UpdateTPList()
+    local plrs = {}
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= Player then table.insert(plrs, p.Name) end
+    end
+    table.insert(plrs, 1, "Selecionar Jogador")
+    -- Aqui simulamos um menu clicável simples
+    local nextTarget = plrs[math.random(1, #plrs)]
+    currentTPTarget = nextTarget
+    TPButton.Text = "Alvo: " .. currentTPTarget
+end
+
+TPButton.MouseButton1Click:Connect(function()
+    UpdateTPList()
+    if currentTPTarget and currentTPTarget ~= "Selecionar Jogador" then
+        local target = Players:FindFirstChild(currentTPTarget)
+        if target and target.Character and target.Character:FindFirstChild("HumanoidRootPart") and Player.Character and Player.Character:FindFirstChild("HumanoidRootPart") then
+            -- Teleporta o jogador local para a posição do alvo
+            Player.Character.HumanoidRootPart.CFrame = target.Character.HumanoidRootPart.CFrame + Vector3.new(0, 0, 2)
+        end
+    end
+end)
+
+-- Loop de atualização
+RunService.RenderStepped:Connect(UpdateESP)
+
+-- Sistema de limpeza ao sair
+Players.PlayerRemoving:Connect(function(plr)
+    RemoveESP(plr)
+end)
